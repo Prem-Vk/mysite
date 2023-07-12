@@ -1,0 +1,88 @@
+name: Migration Check
+
+on:
+  pull_request:
+    types: [ edited, opened, synchronize, reopened ]
+    branches:
+      - develop
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const commentHeading = 'Migration file(s) detected in this pull request:';
+
+            //Comment creator function
+            function createComment(filenames) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `${commentHeading}\n${filenames}\n\nPlease have a look at [Best Practices For Django Migrations](https://phab.instamojo.com/w/engineering/best_practices_for_django_migrations/).`
+              })
+            }
+            
+            //Comment deletor function
+            function deleteComment(comment_id) {
+              github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id : `${comment_id}`
+              })
+            }
+
+            // Get all comments in an PR
+            function getPullRequestComments(){
+              return github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              })
+            }
+
+            // Find migration comment in all comments of a PR.
+            async function getMigrationCommentId(all_comments){
+              if (all_comments.data.length === 0){return 0};
+              const format_all_comments = await github.paginate(all_comments)
+              for (const comment of format_all_comments){
+                  let comment_body = comment.body
+                  if (comment_body.includes(`${commentHeading}`)) {
+                      return String(comment.url).split("/").pop()
+                  }else{
+                      return 0
+                  }
+              }
+            }
+
+            // Get all file paths from the pull request
+            async function listAllPullRequestFiles(){
+                return await github.rest.pulls.listFiles({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                });
+            }
+            let filenames = [];
+            const prFiles = await listAllPullRequestFiles();
+            const allFilesData = await github.paginate(prFiles)
+
+            for (const fileData of allFilesData) {
+              let filename = String(fileData.filename)
+              if (filename.includes("/migrations/")){
+                filenames.push(filename)
+              }
+            }
+            const all_comments = await getPullRequestComments();
+            const migration_comment_id = await getMigrationCommentId(all_comments);
+
+            if (filenames.length > 0 && migration_comment_id === 0){
+                createComment(filenames);
+            }else if(filenames.length === 0 && migration_comment_id !== 0){
+                let comment_id = parseInt(migration_comment_id)
+                deleteComment(comment_id)
+            }
