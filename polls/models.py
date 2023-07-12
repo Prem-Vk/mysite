@@ -5,3 +5,4 @@ from django.db import models
 class Test(models.Model):
     numb = models.IntegerField(default=0)
     numb2 = models.IntegerField(default=4)
+    numb3 = models.IntegerField(default=4)
